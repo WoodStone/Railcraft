@@ -10,10 +10,9 @@ package mods.railcraft.common.items;
 
 import buildcraft.api.tools.IToolWrench;
 import ic2.api.item.IBoxable;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+
+import java.util.*;
+
 import net.minecraft.block.Block;
 import net.minecraft.client.renderer.texture.IIconRegister;
 import net.minecraft.enchantment.EnchantmentHelper;
@@ -37,9 +36,10 @@ import net.minecraft.block.BlockChest;
 import net.minecraft.block.BlockLever;
 import net.minecraft.block.BlockRailBase;
 import net.minecraft.init.Blocks;
-import net.minecraft.init.Items;
 import net.minecraft.item.Item;
+import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.common.util.ForgeDirection;
+import net.minecraftforge.event.world.BlockEvent.BreakEvent;
 
 public class ItemCrowbar extends ItemTool implements IToolCrowbar, IBoxable, IToolWrench {
 
@@ -142,8 +142,10 @@ public class ItemCrowbar extends ItemTool implements IToolCrowbar, IBoxable, ITo
                 EntityPlayer player = (EntityPlayer) entity;
                 if (!player.isSneaking()) {
                     int level = EnchantmentHelper.getEnchantmentLevel(RailcraftEnchantments.destruction.effectId, stack) * 2 + 1;
-                    if (level > 0)
-                        checkBlocks(world, level, x, y, z);
+                    if (level > 0) {
+                        BlockMatrix matrix = new BlockMatrix(world, player, level, x, y, z);
+                        matrix.breakBlocks();
+                    }
                 }
             }
         return super.onBlockDestroyed(stack, world, block, x, y, z, entity);
@@ -219,46 +221,99 @@ public class ItemCrowbar extends ItemTool implements IToolCrowbar, IBoxable, ITo
         info.add(LocalizationPlugin.translate("item.railcraft.tool.crowbar.tip"));
     }
 
-    private void removeAndDrop(World world, int x, int y, int z, Block block) {
-    	int meta = WorldPlugin.getBlockMetadata(world, x, y, z);
-        List<ItemStack> drops = block.getDrops(world, x, y, z, meta, 0);
-        InvTools.dropItems(drops, world, x, y, z);
-        world.setBlockToAir(x, y, z);
-    }
+    private class BlockMatrix {
+        private World world;
+        private EntityPlayer player;
+        private int[][][] matrix;
+        private Queue<int[]> queue;
+        private int origin;
+        private int size;
+        private int startX;
+        private int startY;
+        private int startZ;
 
-    private void removeExtraBlocks(World world, int level, int x, int y, int z, Block block) {
-        if (level > 0) {
-            removeAndDrop(world, x, y, z, block);
-            checkBlocks(world, level, x, y, z);
+        BlockMatrix(World world, EntityPlayer player, int size, int startX, int startY, int startZ) {
+            this.world = world;
+            this.player = player;
+            this.origin = size / 2;
+            this.size = size;
+            this.startX = startX;
+            this.startY = startY;
+            this.startZ = startZ;
+            
+            createMatrix();
         }
-    }
 
-    private void checkBlock(World world, int level, int x, int y, int z) {
-        Block block = WorldPlugin.getBlock(world, x, y, z);
-        if (TrackTools.isRailBlock(block) || block instanceof BlockTrackElevator || block.isToolEffective("crowbar", WorldPlugin.getBlockMetadata(world, x, y, z)))
-            removeExtraBlocks(world, level - 1, x, y, z, block);
-    }
+        private void createMatrix() {
+            matrix = new int[size][size][size];
+            matrix[origin][origin][origin] = 1;
+            queue = new LinkedList<int[]>();
+            queue.add(new int[]{startX, startY, startZ});
 
-    private void checkBlocks(World world, int level, int x, int y, int z) {
-        //NORTH
-        checkBlock(world, level, x, y, z - 1);
-        checkBlock(world, level, x, y + 1, z - 1);
-        checkBlock(world, level, x, y - 1, z - 1);
-        //SOUTH
-        checkBlock(world, level, x, y, z + 1);
-        checkBlock(world, level, x, y + 1, z + 1);
-        checkBlock(world, level, x, y - 1, z + 1);
-        //EAST
-        checkBlock(world, level, x + 1, y, z);
-        checkBlock(world, level, x + 1, y + 1, z);
-        checkBlock(world, level, x + 1, y - 1, z);
-        //WEST
-        checkBlock(world, level, x - 1, y, z);
-        checkBlock(world, level, x - 1, y + 1, z);
-        checkBlock(world, level, x - 1, y - 1, z);
-        //UP_DOWN
-        checkBlock(world, level, x, y + 1, z);
-        checkBlock(world, level, x, y - 1, z);
+            while (!queue.isEmpty()) {
+                int[] b = queue.remove();
+                checkBlocks(b[0], b[1], b[2]);
+            }
+        }
+
+        public void breakBlocks() {
+            for (int i = 0; i < matrix.length; i++) {
+                for (int j = 0; j < matrix.length; j++) {
+                    for (int k = 0; k < matrix.length; k++) {
+                        if (matrix[i][j][k] == 1) {
+                            int posX = startX - origin + i;
+                            int postY = startY - origin + j;
+                            int posZ = startZ - origin+ k;
+                            Block block = WorldPlugin.getBlock(world, posX, postY, posZ);
+                            int meta = WorldPlugin.getBlockMetadata(world, posX, postY, posZ);
+                            BreakEvent event = new BreakEvent(posX, postY, posZ, world, block, meta, player);
+                            MinecraftForge.EVENT_BUS.post(event);
+                            if (event.isCanceled())
+                                return;
+                            List<ItemStack> drops = block.getDrops(world, posX, postY, posZ, meta, 0);
+                            InvTools.dropItems(drops, world, posX, postY, posZ);
+                            world.setBlockToAir(posX, postY, posZ);
+                        }
+                    }
+                }
+            }
+        }
+
+        private void checkBlock(int x, int y, int z) {
+            Block block = WorldPlugin.getBlock(world, x, y, z);
+            if (TrackTools.isRailBlock(block) || block instanceof BlockTrackElevator || block.isToolEffective("crowbar", WorldPlugin.getBlockMetadata(world, x, y, z)))
+                try {
+                    if (matrix[x-startX+origin][y-startY+origin][z-startZ+origin] != 1) {
+                        matrix[x-startX+origin][y-startY+origin][z-startZ+origin] = 1;
+                        queue.add(new int[] {x, y, z});
+                    }
+                } catch (ArrayIndexOutOfBoundsException e) {
+                    return;
+                }
+        }
+
+        private void checkBlocks(int x, int y, int z) {
+            //NORTH
+            checkBlock(x, y, z - 1);
+            checkBlock(x, y + 1, z - 1);
+            checkBlock(x, y - 1, z - 1);
+            //SOUTH
+            checkBlock(x, y, z + 1);
+            checkBlock(x, y + 1, z + 1);
+            checkBlock(x, y - 1, z + 1);
+            //EAST
+            checkBlock(x + 1, y, z);
+            checkBlock(x + 1, y + 1, z);
+            checkBlock(x + 1, y - 1, z);
+            //WEST
+            checkBlock(x - 1, y, z);
+            checkBlock(x - 1, y + 1, z);
+            checkBlock(x - 1, y - 1, z);
+            //UP_DOWN
+            checkBlock(x, y + 1, z);
+            checkBlock(x, y - 1, z);
+        }
+
     }
 
 }
