@@ -1,6 +1,6 @@
-/* 
+/*
  * Copyright (c) CovertJaguar, 2014 http://railcraft.info
- * 
+ *
  * This code is the property of CovertJaguar
  * and may only be used with explicit written
  * permission unless otherwise specified on the
@@ -80,7 +80,7 @@ public class ItemCrowbar extends ItemTool implements IToolCrowbar, IBoxable, ITo
 
     protected ItemCrowbar(ToolMaterial material) {
         super(3, material, new HashSet<Block>(Arrays.asList(new Block[]{
-            Blocks.rail, Blocks.detector_rail, Blocks.golden_rail, Blocks.activator_rail
+                Blocks.rail, Blocks.detector_rail, Blocks.golden_rail, Blocks.activator_rail
         })));
         setCreativeTab(CreativePlugin.RAILCRAFT_TAB);
         shiftRotations.add(BlockLever.class);
@@ -240,7 +240,7 @@ public class ItemCrowbar extends ItemTool implements IToolCrowbar, IBoxable, ITo
             this.startX = startX;
             this.startY = startY;
             this.startZ = startZ;
-            
+
             createMatrix();
         }
 
@@ -269,7 +269,7 @@ public class ItemCrowbar extends ItemTool implements IToolCrowbar, IBoxable, ITo
                             BreakEvent event = new BreakEvent(posX, postY, posZ, world, block, meta, player);
                             MinecraftForge.EVENT_BUS.post(event);
                             if (event.isCanceled())
-                                return;
+                                continue;
                             List<ItemStack> drops = block.getDrops(world, posX, postY, posZ, meta, 0);
                             InvTools.dropItems(drops, world, posX, postY, posZ);
                             world.setBlockToAir(posX, postY, posZ);
@@ -281,15 +281,17 @@ public class ItemCrowbar extends ItemTool implements IToolCrowbar, IBoxable, ITo
 
         private void checkBlock(int x, int y, int z) {
             Block block = WorldPlugin.getBlock(world, x, y, z);
-            if (TrackTools.isRailBlock(block) || block instanceof BlockTrackElevator || block.isToolEffective("crowbar", WorldPlugin.getBlockMetadata(world, x, y, z)))
-                try {
-                    if (matrix[x-startX+origin][y-startY+origin][z-startZ+origin] != 1) {
-                        matrix[x-startX+origin][y-startY+origin][z-startZ+origin] = 1;
+            if (TrackTools.isRailBlock(block) || block instanceof BlockTrackElevator || block.isToolEffective("crowbar", WorldPlugin.getBlockMetadata(world, x, y, z))) {
+                int posX = x - startX + origin;
+                int posY = y - startY + origin;
+                int posZ = z - startZ + origin;
+                if (posX >= 0 && posX < size && posY >= 0 && posY < size && posZ >= 0 && posZ < size) {
+                    if (matrix[posX][posY][posZ] != 1) {
+                        matrix[posX][posY][posZ] = 1;
                         queue.add(new int[] {x, y, z});
                     }
-                } catch (ArrayIndexOutOfBoundsException e) {
-                    return;
                 }
+            }
         }
 
         private void checkBlocks(int x, int y, int z) {
